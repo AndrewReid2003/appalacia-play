@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no">
+  <title>Appalacia</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #050608; overflow: hidden; font-family: Georgia, "Times New Roman", serif; color: #ddd4c4; }
+    #unity-canvas { width: 100%; height: 100%; display: block; background: #050608; outline: none; }
+    #loader { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #050608; transition: opacity 0.8s; }
+    #loader .logo { width: min(640px, 80vw); height: auto; margin-bottom: 4px; }
+    #loader .title { font-size: 64px; letter-spacing: 16px; font-weight: bold; }
+    #loader .sub { color: #8f877a; margin: 8px 0 28px; font-size: 18px; }
+    #bar { width: 320px; height: 4px; background: #222; }
+    #fill { height: 100%; width: 0; background: #e0b56c; transition: width 0.2s; }
+    #msg { margin-top: 14px; color: #8f877a; font-size: 15px; text-align: center; max-width: 520px; line-height: 1.5; }
+    #fullscreen { position: absolute; right: 14px; bottom: 14px; background: rgba(20,18,15,0.7); color: #ddd4c4; border: 1px solid rgba(190,160,110,0.4); padding: 8px 14px; font-size: 14px; cursor: pointer; display: none; }
+  </style>
+</head>
+<body>
+  <canvas id="unity-canvas" tabindex="-1"></canvas>
+  <div id="loader">
+    <img class="logo" src="logo.png" alt="Appalacia">
+    <div class="sub">Something in the holler is hunting you back.</div>
+    <div id="bar"><div id="fill"></div></div>
+    <div id="msg">Loading the holler&hellip;<br>Headphones recommended. On Xbox, switch on Edge's game controller mode so your controller drives the game.</div>
+  </div>
+  <button id="fullscreen">Fullscreen</button>
+  <audio id="menu-music" src="StreamingAssets/Menu/menu_theme.mp3" loop preload="auto"></audio>
+  <script>
+    // Some browsers (and embedded views) refuse pointer lock and reject the promise; Unity would treat
+    // that as a fatal error. Swallow it so the game keeps running (mouse look still works unlocked).
+    (function () {
+      var original = HTMLCanvasElement.prototype.requestPointerLock;
+      if (original) {
+        HTMLCanvasElement.prototype.requestPointerLock = function () {
+          try {
+            var result = original.apply(this, arguments);
+            if (result && typeof result.catch === "function") result.catch(function () {});
+            return result;
+          } catch (e) { return undefined; }
+        };
+      }
+      window.addEventListener("unhandledrejection", function (e) {
+        if (String(e.reason).indexOf("pointer lock") >= 0 || String(e.reason).indexOf("PointerLock") >= 0) e.preventDefault();
+      });
+    })();
+    // Menu music: exactly one <audio> element. The game turns it on (menus) and off (a match) through
+    // AppalaciaMenuMusic in Plugins/WebGL/AppalaciaWeb.jslib; it fades in and out over ~1.5 s.
+    (function () {
+      var music = document.querySelector("#menu-music"), target = 0, fadeTimer = null, MAX = 0.55;
+      music.volume = 0;
+      function fade() {
+        if (fadeTimer) return;
+        fadeTimer = setInterval(function () {
+          var v = music.volume + Math.sign(target - music.volume) * 0.03;
+          music.volume = Math.min(MAX, Math.max(0, Math.abs(target - v) < 0.03 ? target : v));
+          if (music.volume === target) {
+            clearInterval(fadeTimer); fadeTimer = null;
+            if (target === 0) music.pause();
+          }
+        }, 80);
+      }
+      window.appalaciaMenuMusic = function (on) {
+        target = on ? MAX : 0;
+        if (on && music.paused) { var p = music.play(); if (p && p.catch) p.catch(function () {}); }
+        fade();
+      };
+    })();
+    var canvas = document.querySelector("#unity-canvas");
+    var buildUrl = "Build";
+    var config = {
+      dataUrl: buildUrl + "/WebBuild.data.unityweb",
+      frameworkUrl: buildUrl + "/WebBuild.framework.js.unityweb",
+      codeUrl: buildUrl + "/WebBuild.wasm.unityweb",
+      streamingAssetsUrl: "StreamingAssets",
+      companyName: "Sonny and Andrew",
+      productName: "Appalacia",
+      productVersion: "0.1.0",
+    };
+
+    var script = document.createElement("script");
+    script.src = buildUrl + "/WebBuild.loader.js";
+    script.onload = function () {
+      createUnityInstance(canvas, config, function (progress) {
+        document.querySelector("#fill").style.width = (100 * progress) + "%";
+      }).then(function (instance) {
+        window.appalacia = instance;
+        var loader = document.querySelector("#loader");
+        // Browsers only allow sound and video after a click, so ask for one before showing the menu.
+        document.querySelector("#bar").style.display = "none";
+        document.querySelector("#msg").innerHTML = '<span style="color:#e0b56c;font-size:22px;letter-spacing:3px">CLICK TO ENTER THE HOLLER</span><br>Headphones recommended.';
+        loader.style.cursor = "pointer";
+        loader.addEventListener("click", function () {
+          var music = document.querySelector("#menu-music");
+          if (music.paused) window.appalaciaMenuMusic(true);   // the menu is showing; start the song inside this click
+          loader.style.opacity = 0;
+          setTimeout(function () { loader.style.display = "none"; }, 900);
+          canvas.focus();
+        }, { once: true });
+        var fs = document.querySelector("#fullscreen");
+        fs.style.display = "block";
+        fs.onclick = function () { instance.SetFullscreen(1); };
+        canvas.focus();
+      }).catch(function (message) {
+        document.querySelector("#msg").innerText = "The game couldn't start: " + message;
+      });
+    };
+    document.body.appendChild(script);
+    canvas.addEventListener("click", function () { canvas.focus(); });
+  </script>
+</body>
+</html>
